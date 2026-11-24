@@ -34,6 +34,9 @@ class PartialParse(object):
         ###       reference the sentence object.  That is, remember to NOT modify the sentence object. 
 
 
+        self.stack = ["ROOT"]
+        self.buffer = list(sentence)
+        self.dependencies = []
         ### END YOUR CODE
 
 
@@ -53,6 +56,16 @@ class PartialParse(object):
         ###         3. Right Arc
 
 
+        if transition == "S":
+            self.stack.append(self.buffer.pop(0))
+        elif transition == "LA":
+            self.dependencies.append((self.stack[-1], self.stack[-2]))
+            self.stack.pop(-2)
+        elif transition == "RA":
+            self.dependencies.append((self.stack[-2], self.stack[-1]))
+            self.stack.pop()
+        else:
+            raise ValueError("Unknown transition: " + str(transition))
         ### END YOUR CODE
 
     def parse(self, transitions):
@@ -104,6 +117,19 @@ def minibatch_parse(sentences, model, batch_size):
     ###             is being accessed by `partial_parses` and may cause your code to crash.
 
 
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    partial_parses = [PartialParse(sentence) for sentence in sentences]
+    unfinished = [p for p in partial_parses if p.buffer or len(p.stack) > 1]
+    while unfinished:
+        batch = unfinished[:batch_size]
+        transitions = model.predict(batch)
+        if len(transitions) != len(batch):
+            raise ValueError("Model must return one transition per partial parse")
+        for partial_parse, transition in zip(batch, transitions):
+            partial_parse.parse_step(transition)
+        unfinished = [p for p in unfinished if p.buffer or len(p.stack) > 1]
+    dependencies = [p.dependencies for p in partial_parses]
     ### END YOUR CODE
 
     return dependencies

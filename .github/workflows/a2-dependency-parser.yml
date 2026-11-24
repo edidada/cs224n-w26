@@ -1,0 +1,59 @@
+name: A2 dependency parser
+on:
+  push:
+    branches: [edidada/a2-dependency-parser]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      PYTHONHASHSEED: '0'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch fixed task verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download a2-verifier-tools-20261125 --repo edidada/cs224n-w26 --pattern cs224n-a2-verifier-tools.zip
+          echo '8fdcef6f57e8a9a70dfd65f1c13780b8c5249d5dfc21d72e601ae715c5daed43  cs224n-a2-verifier-tools.zip' | sha256sum --check
+          unzip cs224n-a2-verifier-tools.zip -d .tools
+          sha256sum --check reports/a2-source.sha256
+      - name: Install official-version CPU environment
+        run: |
+          pip install numpy==1.26.4 tqdm==4.67.1 docopt==0.6.2
+          pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+      - name: Original transition and model checks
+        working-directory: a2
+        run: |
+          python parser_transitions.py part_c
+          python parser_transitions.py part_d
+          python parser_model.py -e -f
+      - name: Additional forward, gradient and batch checks
+        run: python .tools/verify_cs224n_parser.py --root a2 --output evidence --mode checks
+      - name: Train ten epochs on all provided data and evaluate best dev checkpoint
+        working-directory: a2
+        run: |
+          set -euo pipefail
+          python run.py --seed 20261125 2>&1 | tee ../training.log
+      - name: Audit full training targets and independently score held-out trees
+        run: python .tools/verify_cs224n_parser.py --root a2 --output evidence --mode audit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a2-full-data
+          path: |
+            a2/results/
+            evidence/
+            training.log
+            .tools/provenance.json
+            reports/
+          include-hidden-files: true

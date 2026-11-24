@@ -1,0 +1,13 @@
+{
+  "source_base": "cf16c607e71e9b7eb159773ba951737d028e37af",
+  "official_test_bodies_unchanged": [
+    "test_step",
+    "test_parse_step",
+    "test_parse",
+    "DummyModel",
+    "test_dependencies",
+    "test_minibatch_parse"
+  ],
+  "source_hash_entries": 10,
+  "scope": "AST/hash inspection only; no local course execution"
+}
