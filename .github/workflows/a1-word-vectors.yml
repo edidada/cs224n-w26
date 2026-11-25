@@ -24,9 +24,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download a1-verifier-tools-20261125 --repo edidada/cs224n-w26 --pattern cs224n-a1-verifier-tools.zip
-          echo 'cc9210e1966f69d0eb0d7e6e350cf180566794366befb2cfdb82fd6123c8f5db  cs224n-a1-verifier-tools.zip' | sha256sum --check
-          unzip cs224n-a1-verifier-tools.zip -d .tools
+          gh release download a1-pinned-tools-20261125 --repo edidada/cs224n-w26 --pattern cs224n-a1-pinned-tools.zip
+          echo 'f23aa2fe3b5e5bcf9ac4f18bb0ea814550b22df7ad7d8e443c613d2877d5ecba  cs224n-a1-pinned-tools.zip' | sha256sum --check
+          unzip cs224n-a1-pinned-tools.zip -d .tools
           sha256sum --check reports/a1-source.sha256
       - name: Install fixed notebook environment
         run: |
