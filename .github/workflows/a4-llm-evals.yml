@@ -24,6 +24,7 @@ jobs:
           import json, sys, types
           from pathlib import Path
           from unittest.mock import patch
+          sys.path.insert(0, str(Path.cwd()))
           # Install a fake transport before imports: provider code is never loaded.
           transport = types.ModuleType('client.query')
           transport.query_model = lambda **kwargs: (_ for _ in ()).throw(AssertionError('Unexpected call'))
