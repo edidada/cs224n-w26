@@ -30,10 +30,14 @@ def get_chunked_tinystories(
     chunk_size: int,
 ) -> Int[Tensor, "num_chunks chunk_size"]:
 
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = AutoTokenizer.from_pretrained(
+        "openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
 
     # Load tiny stories dataset
-    train_dataset = load_dataset("roneneldan/TinyStories")["train"]
+    revision = os.environ.get("CS224N_TINYSTORIES_REVISION")
+    if not revision:
+        raise ValueError("Set CS224N_TINYSTORIES_REVISION to an exact dataset commit")
+    train_dataset = load_dataset("roneneldan/TinyStories", revision=revision)["train"]
 
     # We'll just grab the first 1%
     train_dataset = train_dataset.select(range(int(len(train_dataset) * 0.01)))
@@ -97,11 +101,14 @@ def train(
         gradient_clipping = float("inf")
 
     chunk_size: int = model_config.context_length
-    cached_dataset_path: str = f"./datasets/tinystories_10pct_chunk_size_{chunk_size}.pt"
+    revision = os.environ.get("CS224N_TINYSTORIES_REVISION")
+    if not revision:
+        raise ValueError("Set CS224N_TINYSTORIES_REVISION to an exact dataset commit")
+    cached_dataset_path: str = f"./datasets/tinystories_1pct_{revision}_chunk_size_{chunk_size}.pt"
     os.makedirs(os.path.dirname(cached_dataset_path), exist_ok=True)
     
     if os.path.exists(cached_dataset_path):
-        dataset = torch.load(cached_dataset_path)
+        dataset = torch.load(cached_dataset_path, weights_only=True)
     else:
         dataset: Int[Tensor, "num_chunks chunk_size"] = get_chunked_tinystories(chunk_size)
         torch.save(dataset, cached_dataset_path)
@@ -155,10 +162,22 @@ def train(
 
     # Done with training, plot results in single plot
     plot_results(losses, grad_norms, save_path="./losses_and_grad_norms.png")
+    return model, dict(losses=losses, gradient_norms=grad_norms,
+                       steps=num_steps_completed, chunks=num_chunks,
+                       chunk_size=chunk_size, batch_size=batch_size,
+                       learning_rate=learning_rate, gradient_clipping=gradient_clipping,
+                       dataset_revision=revision, dataset_fraction=0.01,
+                       dataset_cache=cached_dataset_path, model_config=vars(model_config))
 
 
 
 if __name__ == "__main__":
+
+    if not os.environ.get("CS224N_TINYSTORIES_REVISION"):
+        from huggingface_hub import HfApi
+        os.environ["CS224N_TINYSTORIES_REVISION"] = HfApi().dataset_info(
+            "roneneldan/TinyStories").sha
+        print("Resolved TinyStories revision:", os.environ["CS224N_TINYSTORIES_REVISION"])
 
     tiny_model_config = ModelConfig(
         d_model=33,

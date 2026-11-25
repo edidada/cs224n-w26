@@ -1,0 +1,59 @@
+name: A3 Transformer and training baseline
+on:
+  push:
+    branches: [edidada/a3-transformer]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transformer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      PYTHONHASHSEED: '0'
+      PYTHONUNBUFFERED: '1'
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Fixed source and verifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download a3-verifier-tools-20261125 --repo edidada/cs224n-w26 --pattern cs224n-a3-verifier-tools.zip
+          echo '0929ebb11166351f766b0069ed263faa8c939d829d036b76551eb28a5914fd1e  cs224n-a3-verifier-tools.zip' | sha256sum --check
+          unzip cs224n-a3-verifier-tools.zip -d .tools
+          sha256sum --check reports/a3-source.sha256
+      - name: Install CPU environment
+        run: |
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy==1.26.4 transformers==4.46.3 datasets==2.21.0 huggingface_hub==0.26.2 jaxtyping==0.2.36 einops==0.8.0 matplotlib==3.9.2 pytest==8.3.4 tqdm==4.67.1
+      - name: Six original immutable snapshot tests
+        working-directory: a3/tests
+        run: |
+          set -euo pipefail
+          pytest -q --junitxml=../../evidence/snapshot-tests.xml 2>&1 | tee ../../snapshot-tests.log
+      - name: Independent attention, causality, gradient and generation checks
+        run: python .tools/verify_cs224n_transformer.py --root a3 --output evidence --mode checks
+      - name: Full pretrained GPT-2 conversion against pinned upstream model
+        run: python .tools/verify_cs224n_transformer.py --root a3 --output evidence --mode pretrained
+      - name: Original-config TinyStories baseline for 100 batches
+        run: |
+          set -euo pipefail
+          python .tools/verify_cs224n_transformer.py --root a3 --output evidence --mode train 2>&1 | tee training.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a3-transformer-baseline
+          path: |
+            evidence/
+            a3/losses_and_grad_norms.png
+            training.log
+            snapshot-tests.log
+            .tools/provenance.json
+            reports/
+          include-hidden-files: true

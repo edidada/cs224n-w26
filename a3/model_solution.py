@@ -61,8 +61,17 @@ class CausalAttention(nn.Module):
         self, x: Float[Tensor, "batch seq_len d_model"]
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
-        # TODO, complete 
-        return torch.empty(1)
+        batch_size, seq_len, _ = x.shape
+        if not 1 <= seq_len <= self.causal_mask.shape[-1]:
+            raise ValueError("Sequence length is outside the attention context")
+        q = rearrange(self.W_q(x), 'b t (h d) -> b h t d', d=self.d_attention)
+        k = rearrange(self.W_k(x), 'b t (h d) -> b h t d', d=self.d_attention)
+        v = rearrange(self.W_v(x), 'b t (h d) -> b h t d', d=self.d_attention)
+        scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.d_attention)
+        scores = scores.masked_fill(self.causal_mask[:, :, :seq_len, :seq_len] == 0,
+                                    float('-inf'))
+        attended = softmax(scores, dim=-1) @ v
+        return self.W_o(rearrange(attended, 'b h t d -> b t (h d)'))
 
 
 
@@ -88,8 +97,7 @@ class MLP(nn.Module):
         self, x: Float[Tensor, "batch seq_len d_model"]
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
-        # TODO, complete
-        return torch.empty(1)
+        return self.fc2(self.gelu(self.fc1(x)))
         
 
 class DecoderBlock(nn.Module):
@@ -106,8 +114,8 @@ class DecoderBlock(nn.Module):
         self, x: Float[Tensor, "batch seq_len d_model"]
     ) -> Float[Tensor, "batch seq_len d_model"]:
 
-        # TODO complete
-        return torch.empty(1)
+        x = x + self.attention(self.pre_layer_norm(x))
+        return x + self.mlp(self.post_layer_norm(x))
 
 
 class Transformer(nn.Module):
@@ -148,8 +156,14 @@ class Transformer(nn.Module):
         self, x: Int[Tensor, "batch_size seq_len"]
     ) -> Float[Tensor, "batch seq_len vocab_size"]:
 
-        # TODO, complete
-        return torch.empty(1)
+        seq_len = x.shape[1]
+        if not 1 <= seq_len <= self.config.context_length:
+            raise ValueError("Sequence length is outside the model context")
+        positions = torch.arange(seq_len, device=x.device)
+        hidden = self.embeddings(x) + self.position_embeddings(positions)
+        for block in self.backbone:
+            hidden = block(hidden)
+        return self.lm_head(self.final_layer_norm(hidden))
 
     @torch.no_grad()
     def generate(
@@ -158,8 +172,13 @@ class Transformer(nn.Module):
         num_new_tokens: int,
     ) -> Int[Tensor, "batch_size seq_len+num_new_tokens"]:
 
-        # TODO, complete
-        return torch.empty(1)
+        if num_new_tokens < 0 or x.shape[1] == 0:
+            raise ValueError("Generation needs a nonempty prompt and nonnegative token count")
+        for _ in range(num_new_tokens):
+            logits = self(x[:, -self.config.context_length:])
+            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+            x = torch.cat((x, next_token), dim=1)
+        return x
 
 
     def get_loss_on_batch(
@@ -167,8 +186,11 @@ class Transformer(nn.Module):
         input_ids: Int[Tensor, "batch_size seq_len"], 
     ) -> Float[Tensor, ""]:
 
-        # TODO, complete
-        return torch.empty(1)
+        if input_ids.shape[1] < 2:
+            raise ValueError("Next-token loss needs at least two tokens")
+        logits = self(input_ids)
+        return F.cross_entropy(logits[:, :-1, :].reshape(-1, self.config.vocab_size),
+                               input_ids[:, 1:].reshape(-1))
 
 
     @classmethod
@@ -189,7 +211,9 @@ class Transformer(nn.Module):
         model = cls(config)
 
         # Load weights from HuggingFace
-        model_hf = GPT2LMHeadModel.from_pretrained("gpt2")
+        model_hf = GPT2LMHeadModel.from_pretrained(
+            "openai-community/gpt2",
+            revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
         converted_state_dict: Dict[str, Tensor] = state_dict_converter(model_hf.state_dict())
 
         model.load_state_dict(converted_state_dict)

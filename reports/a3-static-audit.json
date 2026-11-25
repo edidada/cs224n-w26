@@ -1,0 +1,6 @@
+{
+  "base": "cf16c607e71e9b7eb159773ba951737d028e37af",
+  "immutable_test_utils_resources": 17,
+  "source_AST": "valid",
+  "scope": "Static only; no local model execution"
+}
