@@ -185,9 +185,15 @@ def plot_model_output_lengths(input_path="results/alpaca-judge.jsonl", output_pa
     plt.close(fig)
 
 if __name__=="__main__":
-
+    import argparse
+    parser = argparse.ArgumentParser(description="Alpaca evaluation; evaluate makes 90 paid Vertex requests")
+    parser.add_argument("mode", choices=("evaluate", "plot"))
+    parser.add_argument("--allow-paid-calls", action="store_true")
+    args = parser.parse_args()
     load_dotenv()
-
-    ## Uncomment to run your code
-    #run_llm_judge_eval()
-    #plot_model_output_lengths()
+    if args.mode == "evaluate":
+        if not args.allow_paid_calls:
+            parser.error("Real API calls require explicit --allow-paid-calls and configured GCP billing/ADC")
+        run_llm_judge_eval()
+    else:
+        plot_model_output_lengths()

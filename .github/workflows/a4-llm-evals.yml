@@ -58,6 +58,18 @@ jobs:
               stats = gsm8k.eval_model_on_gsm8k()
           assert calls == ['A']*100 + ['B']*100
           assert all(s['count']==100 and s['correct']==99 and s['invalid']==1 for s in stats.values())
+          with patch.object(gsm8k, 'query_model', math_fake):
+              gsm8k.eval_model_on_gsm8k_with_improved_prompt()
+          comparison = gsm8k.plot_comparison()
+          assert comparison['A_paired_accuracy_difference'] == 0
+          assert Path('results/gsm8k-comparison.png').stat().st_size > 1000
+          # Reject plausible-looking comparison inputs drawn from different questions.
+          altered = [json.loads(x) for x in Path('results/gsm8k-improved.jsonl').read_text().splitlines()]
+          altered[0]['question'] = 'different problem'
+          Path('results/mismatched.jsonl').write_text('\n'.join(json.dumps(r) for r in altered))
+          try: gsm8k.plot_comparison(improved_path='results/mismatched.jsonl', output_path='results/forbidden.png')
+          except ValueError: pass
+          else: raise AssertionError('Mismatched corpus accepted')
           with patch.object(llm_judge, 'query_model', side_effect=AssertionError('Duplicate billing')):
               try: llm_judge.run_llm_judge_eval()
               except FileExistsError: pass

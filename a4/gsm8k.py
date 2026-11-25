@@ -152,10 +152,54 @@ def eval_model_on_gsm8k_with_improved_prompt() -> None:
     """
     return _evaluate(("A",), superior_prompt_template, "results/gsm8k-improved.jsonl")
 
+def plot_comparison(standard_path="results/gsm8k-standard.jsonl",
+                    improved_path="results/gsm8k-improved.jsonl",
+                    output_path="results/gsm8k-comparison.png"):
+    """Compare paired, complete raw evaluations; never infer improvement from a prompt."""
+    from pathlib import Path
+    def read(path, models):
+        rows = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()]
+        keyed = {(r["model"], r["index"]): r for r in rows}
+        if len(keyed) != len(rows) or set(keyed) != {(m, i) for m in models for i in range(100)}:
+            raise ValueError("Require exactly 100 unique examples per expected model")
+        if any(type(r["correct"]) is not bool for r in rows):
+            raise ValueError("Correctness must be a JSON boolean")
+        return keyed
+    baseline = read(standard_path, ("A", "B"))
+    improved = read(improved_path, ("A",))
+    for index in range(100):
+        records = [baseline["A", index], baseline["B", index], improved["A", index]]
+        if len({(r["question"], str(r["expected"])) for r in records}) != 1:
+            raise ValueError("Cannot compare mismatched examples or expected answers")
+    scores = [sum(baseline[m, i]["correct"] for i in range(100)) / 100 for m in ("A", "B")]
+    scores.append(sum(improved["A", i]["correct"] for i in range(100)) / 100)
+    destination = Path(output_path)
+    if destination.exists():
+        raise FileExistsError(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots()
+    bars = ax.bar(["A standard", "B standard", "A improved prompt"], scores)
+    ax.set(ylim=(0, 1), ylabel="Exact numerical accuracy (all 100 questions)")
+    ax.bar_label(bars, labels=[f"{score:.0%}" for score in scores], padding=3)
+    fig.tight_layout()
+    fig.savefig(destination)
+    plt.close(fig)
+    return {"A_standard": scores[0], "B_standard": scores[1], "A_improved": scores[2],
+            "A_paired_accuracy_difference": scores[2] - scores[0]}
+
+
 if __name__=="__main__":
-
+    import argparse
+    parser = argparse.ArgumentParser(description="GSM8K evaluation; standard/improved make paid Vertex calls")
+    parser.add_argument("mode", choices=("standard", "improved", "plot"))
+    parser.add_argument("--allow-paid-calls", action="store_true")
+    args = parser.parse_args()
     load_dotenv()
-
-    ## Uncomment to run your code
-    #eval_model_on_gsm8k()
-    #eval_model_on_gsm8k_with_improved_prompt()
+    if args.mode != "plot" and not args.allow_paid_calls:
+        parser.error("Real API calls require explicit --allow-paid-calls and configured GCP billing/ADC")
+    if args.mode == "standard":
+        eval_model_on_gsm8k()
+    elif args.mode == "improved":
+        eval_model_on_gsm8k_with_improved_prompt()
+    else:
+        print(json.dumps(plot_comparison(), indent=2))
