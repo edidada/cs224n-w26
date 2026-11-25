@@ -1,4 +1,4 @@
-# CS224n Winter2026 A3：Self-Attention与Transformer（待远端验收）
+# CS224n Winter2026 A3：Self-Attention与Transformer（实现提交必做实验通过）
 
 依据[官方六页手册](https://web.stanford.edu/class/cs224n/assignments_w26/a3.pdf)及[官方ZIP](https://web.stanford.edu/class/cs224n/assignments_w26/a3.zip)。发行包SHA256 `73f8b3a336f54ae7101698da06bf99df2dac7aa5219c547ad78e397e3ac711df`，原始导入cf16c607；这是发行包镜像，不是独立官方GitHub仓库的fork。独立分支`edidada/a3-transformer`，独立YAML为a3-transformer.yml。
 
@@ -38,4 +38,16 @@
 
 所有新增Python仅放集中工具库`py/verify_cs224n_transformer.py`，固定来源4d99fb0a12c99d97beb0560ffa7fa19aa04b26d2，通过带provenance的本任务ZIP公开发布。训练与模型测试只在GitHub Actions运行，本地只有源码、AST与哈希检查。
 
-当前原始快照、补充检查、预训练对照与100步曲线均待本分支真实运行结果；没有填造loss数值或宣称完成。三项累积改进的bonus为可选项，本次基线不包含它们，也不据基线下降宣称取得加分。自学代码与推导披露AI辅助，不冒充独立课堂提交或私有评阅结果。
+## 首次实际运行与工件复核
+
+实现提交 `bb7230e4c3aa4edf7b4ba48dd013c41201fd048e` 的 [run45626368108](https://github.com/edidada/cs224n-w26/actions/runs/45626368108) completed/success。原始6项快照零失败/错误/跳过，补充检查全部通过；固定GPT-2转换后，两条6-token输入的全部词表logits与参考最大绝对误差为0.0。这只覆盖实际测试输入，不证明所有可能输入均无误差，也不是从零训练GPT-2。
+
+TinyStories实际修订为 `f54c09fd23315a6f9c86f9dc80f725de7d8f9c64`，当前YAML已显式固定它，后续不再依赖main解析。原首1%预处理得到9049个512-token块；实际按原配置训练100步。全部loss和梯度范数有限，前10步loss均值10.83325071，后10步10.76754246，末步10.76325798。损失总体下降但不逐步单调；绝对下降有限，不能据此声称具备良好语言生成质量或验证集泛化能力。
+
+![100步真实训练loss与梯度范数](a3-losses-and-grad-norms.png)
+
+图像已实际打开查看：损失前段有波动，随后总体降低；梯度范数约1.1715–1.7495。后者是clip_grad_norm_返回的裁剪前范数，不是裁剪后实测值；阈值配置为1，不能因曲线大于1就判剪裁无效。纵轴缩放显示细小变化，不应当作大幅改善。
+
+完整工件已下载并核对实际图像和baseline.weights SHA。曲线SHA256 `22aa5015520af6d1201ce254b7a6615d417e92b2ab428aff77eeca353662dc9e`，权重 `66b2dc6a63467d3f41f50f514dea4e018f10f3de1463f0e763b8401633779df4`。数据缓存不在该工件内，其SHA只由远端记录，没有冒称本地重新核验缓存。原始JSON、JUnit、曲线和下载审计归档到langnote `courses/lab-reports/CS224n-W26-A3-evidence/run-45626368108/`。
+
+本次补充报告并固定相同的数据修订，更新后的HEAD还须自身CI复验；上述数值严格属于所列实现run。三项累积改进bonus为可选项，本次不包含它们，也不据基线下降宣称取得加分。自学代码与推导披露AI辅助，不冒充独立课堂提交或私有评阅结果。

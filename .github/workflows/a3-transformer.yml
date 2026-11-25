@@ -15,6 +15,7 @@ jobs:
       PYTHONHASHSEED: '0'
       PYTHONUNBUFFERED: '1'
       MPLBACKEND: Agg
+      CS224N_TINYSTORIES_REVISION: f54c09fd23315a6f9c86f9dc80f725de7d8f9c64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
