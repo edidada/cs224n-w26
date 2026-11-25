@@ -1,0 +1,69 @@
+name: A4 offline evaluation protocol
+on:
+  push:
+    branches: [edidada/a4-llm-evals]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install matplotlib==3.9.4 pydantic==2.10.6 python-dotenv==1.0.1 tqdm==4.67.1
+      - name: Offline fixtures only; never Vertex benchmark evidence
+        working-directory: a4
+        env:
+          MPLBACKEND: Agg
+        shell: python
+        run: |
+          import json, sys, types
+          from pathlib import Path
+          from unittest.mock import patch
+          # Install a fake transport before imports: provider code is never loaded.
+          transport = types.ModuleType('client.query')
+          transport.query_model = lambda **kwargs: (_ for _ in ()).throw(AssertionError('Unexpected call'))
+          sys.modules['client.query'] = transport
+          from client.models import QueryResponse
+          import gsm8k, llm_judge
+          def reply(text):
+              return QueryResponse(text=text, input_tokens=1, output_tokens=1, cost=0)
+          def fake(model_id, query):
+              if model_id == 'E': return reply('short answer')
+              if model_id == 'F': return reply('a somewhat longer response with extra words')
+              return reply('Evidence favors E.\n<MODEL_E_BETTER>')
+          with patch.object(llm_judge, 'query_model', fake):
+              summary = llm_judge.run_llm_judge_eval()
+          assert summary['counts'] == {'E':30,'F':0,'tie':0,'invalid':0}
+          rows = [json.loads(x) for x in Path('results/alpaca-judge.jsonl').read_text().splitlines()]
+          assert len(rows) == 120
+          assert sum(r['kind']=='request' for r in rows) == 90
+          llm_judge.plot_model_output_lengths()
+          assert Path('results/alpaca-lengths.png').stat().st_size > 1000
+          for bad in ['', '<MODEL_E_BETTER> <MODEL_F_BETTER>', '<MODEL_E_BETTER>\nextra', '<MODEL_E_BETTER>\n<MODEL_E_BETTER>']:
+              assert llm_judge.judge_parse_status(bad) == 'invalid'
+          assert llm_judge.judge_parse_status('<NO_PREFERENCE_FOUND>') == 'valid'
+          examples = [json.loads(x) for x in Path('data/gsm8k_first_100.jsonl').read_text().splitlines()]
+          calls = []
+          def math_fake(model_id, query):
+              index = len(calls) % 100
+              calls.append(model_id)
+              return reply('#### ' + str(examples[index]['numerical_answer']) if index else 'unparseable')
+          with patch.object(gsm8k, 'query_model', math_fake):
+              stats = gsm8k.eval_model_on_gsm8k()
+          assert calls == ['A']*100 + ['B']*100
+          assert all(s['count']==100 and s['correct']==99 and s['invalid']==1 for s in stats.values())
+          with patch.object(llm_judge, 'query_model', side_effect=AssertionError('Duplicate billing')):
+              try: llm_judge.run_llm_judge_eval()
+              except FileExistsError: pass
+              else: raise AssertionError('Existing output not protected')
+          Path('results/OFFLINE_FIXTURES_ONLY.txt').write_text('Synthetic protocol fixtures. No real model benchmark or paid API execution.\n')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a4-offline-fixtures-only
+          path: a4/results/

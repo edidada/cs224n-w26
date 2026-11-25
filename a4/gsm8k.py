@@ -71,6 +71,8 @@ def _evaluate(models, prompt_template, output_path):
         raise ValueError("Expected the official 100-example GSM8K subset")
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    if output.with_suffix(".summary.json").exists():
+        raise FileExistsError(output.with_suffix(".summary.json"))
     totals = {model: {"correct": 0, "invalid": 0, "count": 0, "cost": 0.0} for model in models}
     # Exclusive creation prevents accidental duplicate billing on a blind rerun.
     with output.open("x", encoding="utf-8") as handle:

@@ -78,7 +78,14 @@ def extract_llm_judge_preference(judge_output: str) -> str:
         return NO_PREFERENCE_FOUND_TAG
     return lines[-1].strip()
 
-def run_llm_judge_eval():
+def judge_parse_status(text):
+    tags = (MODEL_E_PREFERED_TAG, MODEL_F_PREFERED_TAG, NO_PREFERENCE_FOUND_TAG)
+    lines = text.strip().splitlines()
+    count = sum(text.count(tag) for tag in tags)
+    return "valid" if lines and lines[-1].strip() in tags and count == 1 else "invalid"
+
+
+def run_llm_judge_eval(output_path="results/alpaca-judge.jsonl"):
     """
     Run the LLM-as-a-judge evaluation comparing models E and F on AlpacaEval data.
     Use model Z as the judge.
@@ -89,17 +96,93 @@ def run_llm_judge_eval():
     Remember to save your results (model responses + judge outputs) - you will 
     need them for Parts C and D.
     """
-    # TODO complete for question 3b
+    from pathlib import Path
+    examples = load_alpaca_data()
+    if len(examples) != 30:
+        raise ValueError("Expected the official 30 Alpaca instructions")
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path = path.with_suffix(".summary.json")
+    if summary_path.exists():
+        raise FileExistsError(summary_path)
+    counts = {"E": 0, "F": 0, "tie": 0, "invalid": 0}
+    total_cost = 0.0
+    # Every response is flushed before the next paid call, including E/F responses
+    # whose subsequent judge request may fail. Existing runs are never overwritten.
+    with path.open("x", encoding="utf-8") as handle:
+        def request(index, model, prompt):
+            nonlocal total_cost
+            response = query_model(model_id=model, query=Query(turns=[{"user": prompt}]))
+            handle.write(json.dumps({"kind": "request", "index": index, "model": model,
+                                    "prompt": prompt, "response": response.model_dump()}, ensure_ascii=False) + "\n")
+            handle.flush()
+            total_cost += response.cost
+            return response.text
 
-    pass
+        for index, example in enumerate(tqdm(examples)):
+            instruction = example["instruction"]
+            response_e = request(index, "E", instruction)
+            response_f = request(index, "F", instruction)
+            judged = request(index, "Z", llm_judge_template(instruction, response_e, response_f))
+            status = judge_parse_status(judged)
+            preference = extract_llm_judge_preference(judged)
+            outcome = "invalid" if status == "invalid" else {
+                MODEL_E_PREFERED_TAG: "E", MODEL_F_PREFERED_TAG: "F",
+                NO_PREFERENCE_FOUND_TAG: "tie"}[preference]
+            counts[outcome] += 1
+            handle.write(json.dumps({"kind": "verdict", "index": index,
+                                    "parse_status": status, "outcome": outcome}) + "\n")
+            handle.flush()
+    summary = {"counts": counts, "denominator": 30, "cost": total_cost,
+               "E_win_rate_all": counts["E"] / 30, "F_win_rate_all": counts["F"] / 30,
+               "note": "Ties and malformed verdicts remain in the denominator; no automatic retries."}
+    with summary_path.open("x", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    return summary
     
-def plot_model_output_lengths() -> None:
+def plot_model_output_lengths(input_path="results/alpaca-judge.jsonl", output_path="results/alpaca-lengths.png") -> None:
     """
     For Part D: Plot histograms of response lengths for preferred vs. not-preferred outputs.
     """
-    # TODO complete for question 3d
-
-    pass
+    from pathlib import Path
+    records = [json.loads(line) for line in Path(input_path).read_text(encoding="utf-8").splitlines()]
+    responses = {}
+    verdicts = {}
+    for record in records:
+        if record["kind"] == "request" and record["model"] in ("E", "F"):
+            key = (record["index"], record["model"])
+            if key in responses:
+                raise ValueError("Duplicate model response")
+            responses[key] = record["response"]["text"]
+        elif record["kind"] == "verdict":
+            if record["index"] in verdicts:
+                raise ValueError("Duplicate verdict")
+            verdicts[record["index"]] = record["outcome"]
+    if set(verdicts) != set(range(30)) or set(responses) != {(i, m) for i in range(30) for m in ("E", "F")}:
+        raise ValueError("Require a complete 30-pair evaluation")
+    preferred, rejected = [], []
+    excluded = 0
+    for index, winner in sorted(verdicts.items()):
+        if winner not in ("E", "F"):
+            excluded += 1
+            continue
+        preferred.append(len(responses[index, winner].split()))
+        rejected.append(len(responses[index, "F" if winner == "E" else "E"].split()))
+    destination = Path(output_path)
+    if destination.exists():
+        raise FileExistsError(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots()
+    maximum = max(preferred + rejected, default=1)
+    bins = [i * (maximum + 1) / 10 for i in range(11)]
+    ax.hist(preferred, bins=bins, alpha=.55, label=f"Preferred (n={len(preferred)})")
+    ax.hist(rejected, bins=bins, alpha=.55, label=f"Rejected (n={len(rejected)})")
+    ax.set(xlabel="Whitespace-delimited words (not provider tokens)", ylabel="Responses",
+           title=f"Length comparison; {excluded} tied/invalid pairs excluded")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(destination)
+    plt.close(fig)
 
 if __name__=="__main__":
 
