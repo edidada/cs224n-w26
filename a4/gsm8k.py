@@ -60,6 +60,53 @@ def standard_output_extractor(model_generation: str) -> str:
 
 
 
+def _evaluate(models, prompt_template, output_path):
+    """Persist each completed request immediately; never overwrite prior evidence."""
+    from pathlib import Path
+    from decimal import Decimal, InvalidOperation
+
+    data_path = Path(__file__).parent / "data" / "gsm8k_first_100.jsonl"
+    examples = [json.loads(line) for line in data_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if len(examples) != 100:
+        raise ValueError("Expected the official 100-example GSM8K subset")
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    totals = {model: {"correct": 0, "invalid": 0, "count": 0, "cost": 0.0} for model in models}
+    # Exclusive creation prevents accidental duplicate billing on a blind rerun.
+    with output.open("x", encoding="utf-8") as handle:
+        for model in models:
+            for index, example in enumerate(tqdm(examples, desc=model)):
+                prompt = prompt_template(example["question"])
+                response = query_model(model_id=model, query=Query(turns=[{"user": prompt}]))
+                extracted = standard_output_extractor(response.text)
+                valid = False
+                correct = False
+                try:
+                    predicted = Decimal(extracted)
+                    expected = Decimal(str(example["numerical_answer"]).replace(",", ""))
+                    valid = predicted.is_finite() and expected.is_finite()
+                    correct = valid and predicted == expected
+                except InvalidOperation:
+                    pass
+                record = {"model": model, "index": index, "question": example["question"],
+                          "prompt": prompt, "response": response.model_dump(),
+                          "expected": example["numerical_answer"], "extracted": extracted,
+                          "valid": valid, "correct": correct}
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+                handle.flush()
+                stats = totals[model]
+                stats["count"] += 1
+                stats["correct"] += int(correct)
+                stats["invalid"] += int(not valid)
+                stats["cost"] += response.cost
+    for stats in totals.values():
+        stats["accuracy"] = stats["correct"] / stats["count"]
+    summary = output.with_suffix(".summary.json")
+    with summary.open("x", encoding="utf-8") as handle:
+        json.dump(totals, handle, indent=2)
+    return totals
+
+
 def eval_model_on_gsm8k() -> None:
     """
     Benchmark models A and B on the GSM8K dataset using the standard prompt template.
@@ -70,9 +117,7 @@ def eval_model_on_gsm8k() -> None:
     Think about: What metric will you use to evaluate performance? How will you 
     handle cases where the model's output cannot be parsed?
     """
-    # TODO complete for question 2bi
-
-    pass
+    return _evaluate(("A", "B"), standard_prompt_template, "results/gsm8k-standard.jsonl")
 
 
 
@@ -91,17 +136,19 @@ def superior_prompt_template(question: str) -> str:
     NOTE: Your prompt must still produce output in the "#### <answer>" format
     so that standard_output_extractor() can parse the response.
     """
-    # TODO complete for question 2bii
-
-    pass
+    return (
+        "Solve the arithmetic problem carefully. Identify the quantities and units, "
+        "compute intermediate values, then check the result against the question. "
+        "Do not round intermediate calculations. Give a short explanation followed "
+        "by a final line containing only #### <numerical_answer>, with no units "
+        "or trailing punctuation.\n\nProblem: " + question
+    )
 
 def eval_model_on_gsm8k_with_improved_prompt() -> None:
     """
     Evaluate model A using your superior_prompt_template.
     """
-    # TODO complete for question 2bii
-
-    pass
+    return _evaluate(("A",), superior_prompt_template, "results/gsm8k-improved.jsonl")
 
 if __name__=="__main__":
 
