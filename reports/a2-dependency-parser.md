@@ -1,4 +1,4 @@
-# CS224n Winter2026 A2 实验报告（待远程训练验收）
+# CS224n Winter2026 A2 实验报告（实现提交全量训练通过）
 
 来源为[官方八页手册](https://web.stanford.edu/class/cs224n/assignments_w26/a2.pdf)和[官方starter](https://web.stanford.edu/class/cs224n/assignments_w26/a2.zip)，ZIP SHA256 `68854395ef802cb974222e4d0a843bf8c1ca04d8c49de1ebe88fa5129d72ca56`。手册实际下载507426字节、SHA256 `a6a3c3e6141c0ded7940bc41476717f0ad3ead77199b9deab099cbafaa62cf52`，完整读取，依存图另实际查看。原始ZIP导入为cf16c607，独立分支`edidada/a2-dependency-parser`，独立YAML为`a2-dependency-parser.yml`。本项目是官方发行包镜像，不是官方GitHub starter fork。
 
@@ -68,4 +68,25 @@ PyTorch2.1.2 CPU、Python3.11、NumPy1.26.4；固定随机种子20261125及哈�
 
 Actions首先运行官方转移/批处理与模型sanity checks，再验证手工lookup的重复索引梯度、独立线性参考前向、全部参数梯度、dropout模式切换、错误softmax受控负例和小型优化。完整训练不带-d，保留十轮loss/dev UAS、最佳模型、测试依存和精确提交/run；最后从原始test.conll独立重算UAS，逐句检查单父、无自环和无环树。依据手册目标检查末轮训练loss<0.08、最佳dev UAS>0.87，test报告实际值，不预设成绩。
 
-当前尚无本分支训练结果，best dev/test UAS均待真实Actions产出，不把AST检查、toy训练或旧GPT2项目结果当作本A2通过。本地未运行训练、模型测试或课程实验；仅源码/语法/哈希检查。自学说明与代码披露AI辅助，不冒充课堂独立提交或私有评分结果。
+## 实际全量训练结果
+
+实现提交 `59f7b9f59394b0bc135c76177dea31b720f74601` 的 [run45505478640](https://github.com/edidada/cs224n-w26/actions/runs/45505478640) completed/success。官方原始检查和补充检查均通过；训练使用全部1,892,336条转移实例、1700句dev及2416句test，不带debug标记，实际完成十轮。
+
+| Epoch | 训练loss | dev UAS |
+| --- | --- | --- |
+| 1 | 0.185913 | 84.1937% |
+| 2 | 0.115433 | 86.0159% |
+| 3 | 0.101173 | 86.9407% |
+| 4 | 0.091944 | 87.6137% |
+| 5 | 0.085758 | 87.9079% |
+| 6 | 0.080498 | 87.9129% |
+| 7 | 0.076156 | 88.1671% |
+| 8 | 0.072411 | 88.3615% |
+| 9 | 0.069304 | 88.2967% |
+| 10 | 0.066523 | **88.5809%** |
+
+最高dev来自第10轮，恢复该检查点后test UAS为 **88.9069%**。独立评分按原始test.conll的56,684个token统计，50,396个head正确，与原始评估分数一致；2416句均检查完整单父、无自环、无依存环。训练末轮loss低于0.08、最佳dev高于87%，符合手册给出的目标，不将test成绩用于挑选检查点。
+
+完整工件已实际下载，metrics/dependencies/model.weights三项SHA与远端audit逐项一致；模型权重SHA256 `300c8d3783ff11e46248bc9ccba6757c5469c8e4d0b9e20b6380e19ffa917027`。来源和原始JSON/依存证据在langnote的 `courses/lab-reports/CS224n-W26-A2-evidence/run-45505478640/`；下载后只对字节、JSON和整数head重算做核验，没有在本地执行模型。
+
+上述结果严格对应实现提交；本次仅更新报告，更新后的HEAD仍须自身Actions成功再登记最终验收。自学代码与文字披露AI辅助，不冒充课堂独立提交或私有评分结果；没有声称单一seed衡量所有泛化表现，也未使用旧GPT2项目结果替代本A2实验。
