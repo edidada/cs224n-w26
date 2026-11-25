@@ -48,6 +48,20 @@ jobs:
           for bad in ['', '<MODEL_E_BETTER> <MODEL_F_BETTER>', '<MODEL_E_BETTER>\nextra', '<MODEL_E_BETTER>\n<MODEL_E_BETTER>']:
               assert llm_judge.judge_parse_status(bad) == 'invalid'
           assert llm_judge.judge_parse_status('<NO_PREFERENCE_FOUND>') == 'valid'
+          provider = types.ModuleType('client.providers')
+          provider.test_password = lambda **kwargs: kwargs['password'] == 'fixture-secret'
+          sys.modules['client.providers'] = provider
+          import os, redteam
+          histories = []
+          def secret_fake(model_id, query):
+              histories.append(query.model_dump())
+              return reply('fixture-secret')
+          with patch.dict(os.environ, {'STUDENT_EMAIL':'offline-fixture@example.invalid'}), patch.object(redteam, 'query_model', secret_fake):
+              assert redteam.redteam_model('G', ['fixture first turn', 'fixture second turn'], 'fixture-secret') is True
+          assert len(histories[0]['turns']) == 1 and len(histories[1]['turns']) == 3
+          transcript = [json.loads(x) for x in Path('results/redteam-G.jsonl').read_text().splitlines()]
+          assert len(transcript) == 3 and transcript[-1]['verified'] is True
+          assert 'offline-fixture@example.invalid' not in Path('results/redteam-G.jsonl').read_text()
           examples = [json.loads(x) for x in Path('data/gsm8k_first_100.jsonl').read_text().splitlines()]
           calls = []
           def math_fake(model_id, query):
