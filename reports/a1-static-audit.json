@@ -1,0 +1,12 @@
+{
+  "source_base": "cf16c607e71e9b7eb159773ba951737d028e37af",
+  "official_sanity_cells_unchanged": [
+    11,
+    14,
+    17,
+    20
+  ],
+  "notebook_AST": "valid",
+  "source_resources": 7,
+  "scope": "No local course execution; written review pending"
+}

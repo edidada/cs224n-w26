@@ -1,0 +1,52 @@
+name: A1 full word-vector notebook
+on:
+  push:
+    branches: [edidada/a1-word-vectors]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  notebook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: '4'
+      MKL_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '4'
+      PYTHONHASHSEED: '0'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fixed source and notebook executor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download a1-verifier-tools-20261125 --repo edidada/cs224n-w26 --pattern cs224n-a1-verifier-tools.zip
+          echo 'cc9210e1966f69d0eb0d7e6e350cf180566794366befb2cfdb82fd6123c8f5db  cs224n-a1-verifier-tools.zip' | sha256sum --check
+          unzip cs224n-a1-verifier-tools.zip -d .tools
+          sha256sum --check reports/a1-source.sha256
+      - name: Install fixed notebook environment
+        run: |
+          pip install numpy==1.26.4 scipy==1.13.1 gensim==4.3.3 scikit-learn==1.5.2 matplotlib==3.9.2 datasets==2.18.0 huggingface_hub==0.26.2 pyarrow==18.1.0 nbformat==5.10.4 nbclient==0.10.2 ipykernel==6.29.5 ipython==8.30.0 jupyter_client==8.6.3
+          python -m ipykernel install --user --name cs224n-a1 --display-name CS224n-A1
+          mkdir -p evidence
+          pip freeze > evidence/pip-freeze.txt
+      - name: Independent co-occurrence, SVD and plotting checks
+        run: python .tools/verify_cs224n_vectors.py --root a1 --output evidence --mode checks
+      - name: Execute all original notebook cells with full GloVe and original IMDB corpus
+        run: |
+          set -euo pipefail
+          python .tools/verify_cs224n_vectors.py --root a1 --output evidence --mode notebook 2>&1 | tee notebook.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a1-word-vector-evidence
+          path: |
+            evidence/
+            notebook.log
+            .tools/provenance.json
+            reports/
+          include-hidden-files: true
